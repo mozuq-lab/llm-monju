@@ -4,7 +4,7 @@
 
 ## 概要
 
-一つのお題に対して Claude・ChatGPT・Gemini・Grok が複数ラウンドの議論を行い、独立したファシリテーター AI が論点を整理して最終結論を出力します。
+一つのお題に対して複数の LLM が複数ラウンドの議論を行い、独立したファシリテーター AI が論点を整理して最終結論を出力します。すべてのモデル呼び出しは [OpenRouter](https://openrouter.ai/) 経由で行うため、API キー 1 つであらゆるモデルを利用できます。
 
 ### 議論の流れ
 
@@ -17,16 +17,18 @@
    (各主張の整理 → 合意点 → 相違点 → 総合結論)
 ```
 
-## 対応モデル
+## デフォルトモデル
 
-| モデル | プロバイダ | 環境変数 | デフォルトモデル |
-|--------|-----------|----------|-----------------|
-| Claude | Anthropic | `ANTHROPIC_API_KEY` | claude-sonnet-4-6 |
-| ChatGPT | OpenAI | `OPENAI_API_KEY` | gpt-4o |
-| Gemini | Google | `GOOGLE_API_KEY` | gemini-2.0-flash |
-| Grok | xAI | `XAI_API_KEY` | grok-2 |
+UI から表示名・モデル ID を自由に編集・追加・削除できます。
 
-API キーが設定されているモデルのみが自動的に参加します。**議論には最低 2 つのモデルが必要です。**
+| 表示名 | デフォルトモデル ID |
+|--------|-------------------|
+| Claude | `anthropic/claude-sonnet-4-6` |
+| ChatGPT | `openai/gpt-4o` |
+| Gemini | `google/gemini-2.0-flash-001` |
+| Grok | `x-ai/grok-2` |
+
+モデル ID は [OpenRouter Models](https://openrouter.ai/models) から選べます。**議論には最低 2 つのモデルが必要です。**
 
 ## セットアップ
 
@@ -44,14 +46,13 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-`.env` を編集し、利用するサービスの API キーを設定してください。
+`.env` を編集し、OpenRouter の API キーを設定してください。
 
 ```env
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-GOOGLE_API_KEY=AI...
-XAI_API_KEY=xai-...       # 任意
+OPENROUTER_API_KEY=sk-or-...
 ```
+
+API キーは [OpenRouter Keys](https://openrouter.ai/keys) から取得できます。
 
 ### 3. サーバー起動
 
@@ -60,14 +61,14 @@ source .venv/bin/activate   # 未アクティベートの場合
 python app.py
 ```
 
-ブラウザで http://localhost:8000 を開くと議論画面が表示されます。
+ブラウザで `http://localhost:8000` を開くと議論画面が表示されます。
 
 ## 使い方
 
 1. **お題を入力** -- 議論させたいテーマを入力
 2. **ラウンド数を選択** -- 1〜5 ラウンド（デフォルト: 3）
-3. **参加モデルを選択** -- チェックボックスで参加させるモデルを選択
-4. **ファシリテーターを選択** -- 議論を取りまとめるモデルを指定
+3. **参加モデルを編集** -- 表示名とモデル ID を設定し、チェックで有効化
+4. **ファシリテーターを設定** -- 結論を出すモデルの ID を指定
 5. **「議論を開始」をクリック** -- リアルタイムで議論が表示される
 
 ## プロジェクト構成
@@ -76,7 +77,7 @@ python app.py
 llm-monju/
 ├── app.py              # FastAPI サーバー / API エンドポイント
 ├── debate.py           # 議論オーケストレーション
-├── llm_clients.py      # 各 LLM の API クライアント
+├── llm_clients.py      # OpenRouter API クライアント
 ├── static/
 │   └── index.html      # Web UI (HTML / CSS / JS)
 ├── requirements.txt
@@ -89,13 +90,13 @@ llm-monju/
 - **バックエンド**: Python / FastAPI
 - **フロントエンド**: HTML / CSS / JavaScript (フレームワーク不使用)
 - **リアルタイム配信**: Server-Sent Events (SSE)
-- **LLM SDK**: anthropic, openai, google-genai
+- **LLM Gateway**: OpenRouter (OpenAI 互換 API)
 
 ## API
 
-### `GET /api/models`
+### `GET /api/defaults`
 
-利用可能なモデル一覧を返します。
+デフォルトのモデル一覧を返します。
 
 ### `POST /api/debate`
 
@@ -105,8 +106,15 @@ llm-monju/
 {
   "topic": "議論のお題",
   "num_rounds": 3,
-  "models": ["claude", "chatgpt", "gemini"],
-  "facilitator_model": "claude"
+  "debaters": [
+    {"model": "anthropic/claude-sonnet-4-6", "name": "Claude"},
+    {"model": "openai/gpt-4o", "name": "ChatGPT"},
+    {"model": "google/gemini-2.0-flash-001", "name": "Gemini"}
+  ],
+  "facilitator": {
+    "model": "anthropic/claude-sonnet-4-6",
+    "name": "Facilitator"
+  }
 }
 ```
 
