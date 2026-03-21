@@ -17,10 +17,10 @@ from llm_clients import LLMClient
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODELS = [
-    {"model": "anthropic/claude-sonnet-4-6", "name": "Claude"},
-    {"model": "openai/gpt-4o", "name": "ChatGPT"},
-    {"model": "google/gemini-2.0-flash-001", "name": "Gemini"},
-    {"model": "x-ai/grok-2", "name": "Grok"},
+    {"model": "anthropic/claude-opus-4.6", "name": "Claude"},
+    {"model": "openai/gpt-5.4", "name": "ChatGPT"},
+    {"model": "google/gemini-3.1-pro-preview", "name": "Gemini"},
+    {"model": "x-ai/grok-4.20-beta", "name": "Grok"},
 ]
 
 
