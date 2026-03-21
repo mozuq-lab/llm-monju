@@ -167,6 +167,7 @@ class DebateManager:
                 yield msg
 
         # Final conclusion
+        yield {"type": "generating_conclusion"}
         try:
             conclusion = await self.facilitator.generate(
                 self._facilitator_system_prompt(),

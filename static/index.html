@@ -589,7 +589,11 @@
                                     removeLoading();
                                     addMessage(data);
                                     break;
+                                case 'generating_conclusion':
+                                    addLoading('ファシリテーターが結論を生成中...');
+                                    break;
                                 case 'conclusion':
+                                    removeLoading();
                                     addConclusion(data);
                                     break;
                                 case 'done':

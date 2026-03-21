@@ -78,12 +78,13 @@ async def test_event_sequence_1_round():
     events = await collect_events(manager)
 
     types = [e["type"] for e in events]
-    # 開会 → round_start → debater×2 → conclusion → done
+    # 開会 → round_start → debater×2 → generating_conclusion → conclusion → done
     assert types == [
         "message",      # facilitator opening
         "round_start",  # round 1
         "message",      # debater 1
         "message",      # debater 2
+        "generating_conclusion",
         "conclusion",
         "done",
     ]
@@ -105,6 +106,7 @@ async def test_event_sequence_2_rounds():
         "round_start",  # round 2
         "message",      # debater 1
         "message",      # debater 2
+        "generating_conclusion",
         "conclusion",
         "done",
     ]
