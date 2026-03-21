@@ -21,7 +21,10 @@ python app.py
 # Only OPENROUTER_API_KEY is needed
 ```
 
-There are no tests, linters, or build steps configured.
+```bash
+# Run tests (no API key required — uses mock clients)
+pytest test_debate.py -v
+```
 
 ## Architecture
 

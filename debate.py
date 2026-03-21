@@ -106,10 +106,13 @@ class DebateManager:
         """Run the debate, yielding messages as they're generated."""
 
         # Facilitator opening
-        opening = await self.facilitator.generate(
-            self._facilitator_system_prompt(),
-            self._facilitator_opening_prompt(),
-        )
+        try:
+            opening = await self.facilitator.generate(
+                self._facilitator_system_prompt(),
+                self._facilitator_opening_prompt(),
+            )
+        except Exception as e:
+            opening = f"[ファシリテーター応答エラー: {e}]"
         msg = {
             "type": "message",
             "speaker": "facilitator",
