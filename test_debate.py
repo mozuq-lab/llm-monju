@@ -78,7 +78,6 @@ async def test_event_sequence_1_round():
     events = await collect_events(manager)
 
     types = [e["type"] for e in events]
-    # 開会 → round_start → debater×2 → generating_conclusion → conclusion → done
     assert types == [
         "message",      # facilitator opening
         "round_start",  # round 1
@@ -86,6 +85,8 @@ async def test_event_sequence_1_round():
         "message",      # debater 2
         "generating_conclusion",
         "conclusion",
+        "generating_issue_map",
+        "issue_map_error",  # mock returns non-JSON
         "done",
     ]
 
@@ -108,6 +109,8 @@ async def test_event_sequence_2_rounds():
         "message",      # debater 2
         "generating_conclusion",
         "conclusion",
+        "generating_issue_map",
+        "issue_map_error",
         "done",
     ]
 
@@ -128,7 +131,7 @@ async def test_event_sequence_3_debaters_3_rounds():
 
     assert types[0] == "message"   # opening
     assert types[-1] == "done"
-    assert types[-2] == "conclusion"
+    assert "conclusion" in types
 
 
 @pytest.mark.asyncio
@@ -150,8 +153,9 @@ async def test_conclusion_is_last_message():
     events = await collect_events(manager)
 
     assert events[-1]["type"] == "done"
-    assert events[-2]["type"] == "conclusion"
-    assert events[-2]["speaker"] == "facilitator"
+    conclusion_events = [e for e in events if e["type"] == "conclusion"]
+    assert len(conclusion_events) == 1
+    assert conclusion_events[0]["speaker"] == "facilitator"
 
 
 @pytest.mark.asyncio
@@ -190,8 +194,8 @@ async def test_facilitator_call_count():
     manager = make_manager(num_rounds=3, facilitator=facilitator)
     await collect_events(manager)
 
-    # 開会(1) + 要約(2) + 結論(1) = 4
-    assert len(facilitator.calls) == 4
+    # 開会(1) + 要約(2) + 結論(1) + 論点マップ(1) = 5
+    assert len(facilitator.calls) == 5
 
 
 @pytest.mark.asyncio
@@ -423,7 +427,7 @@ async def test_roundbyround_matches_run():
     events_rr.extend(await collect_gen(m2.run_round(2)))
     events_rr.extend(await collect_gen(m2.run_conclude()))
 
-    # run() includes 'done' at the end; run_conclude() does not
+    # run() includes issue_map + done at the end; round-by-round does not
     run_types = [e["type"] for e in events_run]
     rr_types = [e["type"] for e in events_rr]
-    assert run_types == rr_types + ["done"]
+    assert run_types == rr_types + ["generating_issue_map", "issue_map_error", "done"]

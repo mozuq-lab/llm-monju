@@ -227,6 +227,10 @@ async def start_debate(request: DebateRequest):
                 async for event in manager.run_conclude():
                     active.events.append(event)
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                async for event in manager.run_issue_map():
+                    active.events.append(event)
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                await _save_completed(active)
                 cont = {"type": "awaiting_continuation"}
                 active.events.append(cont)
                 yield f"data: {json.dumps(cont, ensure_ascii=False)}\n\n"
@@ -273,6 +277,10 @@ async def next_round(debate_id: str, request: NextRoundRequest = None):
                 async for event in manager.run_conclude():
                     active.events.append(event)
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                async for event in manager.run_issue_map():
+                    active.events.append(event)
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                await _save_completed(active)
                 cont = {"type": "awaiting_continuation"}
                 active.events.append(cont)
                 yield f"data: {json.dumps(cont, ensure_ascii=False)}\n\n"
@@ -314,7 +322,11 @@ async def conclude_debate(debate_id: str, request: NextRoundRequest = None):
             async for event in manager.run_conclude():
                 active.events.append(event)
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            async for event in manager.run_issue_map():
+                active.events.append(event)
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
+            await _save_completed(active)
             cont = {"type": "awaiting_continuation"}
             active.events.append(cont)
             yield f"data: {json.dumps(cont, ensure_ascii=False)}\n\n"
@@ -351,11 +363,15 @@ async def extend_debate(debate_id: str, request: NextRoundRequest = None):
                 active.events.append(event)
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-            # Generate new conclusion
+            # Generate new conclusion + issue map
             async for event in manager.run_conclude():
                 active.events.append(event)
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            async for event in manager.run_issue_map():
+                active.events.append(event)
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
+            await _save_completed(active)
             cont = {"type": "awaiting_continuation"}
             active.events.append(cont)
             yield f"data: {json.dumps(cont, ensure_ascii=False)}\n\n"

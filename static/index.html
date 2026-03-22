@@ -543,6 +543,77 @@
             cursor: pointer;
         }
 
+        .issue-map {
+            background: var(--color-card);
+            border-radius: var(--radius);
+            padding: 1.2rem 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .issue-map-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.95rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .issue-map-header .toggle-icon {
+            font-size: 0.8rem;
+            color: var(--color-muted);
+        }
+
+        .issue-map table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        .issue-map th {
+            background: var(--color-bg);
+            padding: 0.5rem 0.6rem;
+            text-align: center;
+            font-weight: 600;
+            border: 1px solid #e5e7eb;
+        }
+
+        .issue-map th:first-child {
+            text-align: left;
+        }
+
+        .issue-map td {
+            padding: 0.5rem 0.6rem;
+            border: 1px solid #e5e7eb;
+            text-align: center;
+            vertical-align: top;
+        }
+
+        .issue-map td:first-child {
+            text-align: left;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .stance-agree { background: #f0fdf4; color: #166534; }
+        .stance-conditional { background: #fffbeb; color: #92400e; }
+        .stance-disagree { background: #fef2f2; color: #991b1b; }
+
+        .stance-label {
+            display: block;
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        .stance-summary {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--color-muted);
+            margin-top: 0.15rem;
+        }
+
         @media (max-width: 600px) {
             .container { padding: 1rem; }
             header h1 { font-size: 1.6rem; }
@@ -743,6 +814,9 @@
                 case 'conclusion':
                     addConclusion(data);
                     break;
+                case 'issue_map':
+                    addIssueMap(data.data);
+                    break;
             }
         }
 
@@ -807,6 +881,59 @@
             div.innerHTML = `
                 <div class="conclusion-title">結論</div>
                 <div class="message-content">${marked.parse(data.content || '')}</div>
+            `;
+            area.appendChild(div);
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+
+        const STANCE_LABELS = {
+            agree: '○ 賛成',
+            conditional: '△ 条件付き',
+            disagree: '× 反対',
+        };
+
+        function addIssueMap(data) {
+            if (!data || !data.issues || data.issues.length === 0) return;
+
+            const area = document.getElementById('debate-area');
+            // Collect all participant names from positions
+            const nameSet = new Set();
+            data.issues.forEach(issue => {
+                Object.keys(issue.positions || {}).forEach(n => nameSet.add(n));
+            });
+            const names = Array.from(nameSet);
+
+            let tableHtml = '<table><thead><tr><th>論点</th>';
+            names.forEach(n => { tableHtml += `<th>${esc(n)}</th>`; });
+            tableHtml += '</tr></thead><tbody>';
+
+            data.issues.forEach(issue => {
+                tableHtml += `<tr><td>${esc(issue.topic)}</td>`;
+                names.forEach(name => {
+                    const pos = (issue.positions || {})[name];
+                    if (pos) {
+                        const cls = `stance-${pos.stance || 'conditional'}`;
+                        const label = STANCE_LABELS[pos.stance] || pos.stance;
+                        tableHtml += `<td class="${cls}">
+                            <span class="stance-label">${label}</span>
+                            <span class="stance-summary">${esc(pos.summary || '')}</span>
+                        </td>`;
+                    } else {
+                        tableHtml += '<td>-</td>';
+                    }
+                });
+                tableHtml += '</tr>';
+            });
+            tableHtml += '</tbody></table>';
+
+            const div = document.createElement('div');
+            div.className = 'issue-map';
+            div.innerHTML = `
+                <div class="issue-map-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? '' : 'none'">
+                    論点マップ
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div>${tableHtml}</div>
             `;
             area.appendChild(div);
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
@@ -918,6 +1045,16 @@
                     break;
                 case 'generating_conclusion':
                     addLoading('ファシリテーターが結論を生成中...');
+                    break;
+                case 'generating_issue_map':
+                    addLoading('論点マップを生成中...');
+                    break;
+                case 'issue_map':
+                    removeLoading();
+                    addIssueMap(data.data);
+                    break;
+                case 'issue_map_error':
+                    removeLoading();
                     break;
                 case 'conclusion':
                     removeLoading();

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 from typing import AsyncGenerator
 
 from llm_clients import LLMClient
@@ -197,6 +199,8 @@ class DebateManager:
 
         async for event in self._run_conclusion():
             yield event
+        async for event in self.run_issue_map():
+            yield event
         yield {"type": "done"}
 
     # --- Public API: round-by-round (for intervention mode) ---
@@ -216,6 +220,44 @@ class DebateManager:
         """Generate the final conclusion."""
         async for event in self._run_conclusion():
             yield event
+
+    async def run_issue_map(self) -> AsyncGenerator[dict, None]:
+        """Generate an issue map from the debate history."""
+        yield {"type": "generating_issue_map"}
+        debater_names = [d.display_name for d in self.debaters.values()]
+        history = self._format_history()
+        prompt = (
+            f"議論のお題: {self.topic}\n\n"
+            f"参加者: {', '.join(debater_names)}\n\n"
+            f"全議論の記録:\n{history}\n\n"
+            f"---\n"
+            f"上記の議論を分析し、以下のJSON形式で論点マップを出力してください。\n"
+            f"JSONのみを出力し、他のテキストは含めないでください。\n\n"
+            f'{{"issues": [\n'
+            f'  {{"topic": "論点名", "positions": {{\n'
+            f'    "{debater_names[0]}": {{"stance": "agree", "summary": "要約20字以内"}},\n'
+            f'    "{debater_names[1] if len(debater_names) > 1 else "..."}": {{"stance": "disagree", "summary": "要約20字以内"}}\n'
+            f"  }}}}\n"
+            f"]}}\n\n"
+            f"stanceの値: agree(賛成), conditional(条件付き), disagree(反対)\n"
+            f"論点は3〜6個程度に絞ってください。"
+        )
+        try:
+            response = await self.facilitator.generate(
+                "あなたは議論分析の専門家です。指定されたJSON形式のみを出力してください。",
+                prompt,
+            )
+            issue_map = self._parse_issue_map(response)
+            yield {"type": "issue_map", "data": issue_map}
+        except Exception as e:
+            yield {"type": "issue_map_error", "error": str(e)}
+
+    @staticmethod
+    def _parse_issue_map(response: str) -> dict:
+        # Extract JSON from markdown code block if present
+        match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", response)
+        text = match.group(1) if match else response.strip()
+        return json.loads(text)
 
     def inject_human_message(self, content: str, after_round: int) -> dict:
         """Add a human intervention message to the conversation history."""

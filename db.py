@@ -50,6 +50,9 @@ async def save_debate(
     created_at: str | None = None,
 ) -> None:
     now = created_at or datetime.utcnow().isoformat(timespec="seconds")
+    # Delete old data if updating an existing debate
+    await db.execute("DELETE FROM messages WHERE debate_id = ?", (debate_id,))
+    await db.execute("DELETE FROM debates WHERE id = ?", (debate_id,))
     await db.execute(
         "INSERT INTO debates (id, topic, num_rounds, debater_models, facilitator_model, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
@@ -63,6 +66,10 @@ async def save_debate(
         ),
     )
     for seq, event in enumerate(events):
+        content = event.get("content")
+        # Store issue_map data as JSON in the content column
+        if event.get("type") == "issue_map" and "data" in event:
+            content = json.dumps(event["data"], ensure_ascii=False)
         await db.execute(
             "INSERT INTO messages (debate_id, seq, type, speaker, display_name, content, round) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -72,7 +79,7 @@ async def save_debate(
                 event.get("type"),
                 event.get("speaker"),
                 event.get("display_name"),
-                event.get("content"),
+                content,
                 event.get("round"),
             ),
         )
@@ -113,16 +120,23 @@ async def get_debate(db: aiosqlite.Connection, debate_id: str) -> dict | None:
         (debate_id,),
     )
     msg_rows = await cursor.fetchall()
-    events = [
-        {
+    events = []
+    for r in msg_rows:
+        event = {
             "type": r[0],
             "speaker": r[1],
             "display_name": r[2],
             "content": r[3],
             "round": r[4],
         }
-        for r in msg_rows
-    ]
+        # Restore issue_map data from JSON stored in content
+        if r[0] == "issue_map" and r[3]:
+            try:
+                event["data"] = json.loads(r[3])
+                del event["content"]
+            except (json.JSONDecodeError, TypeError):
+                pass
+        events.append(event)
 
     return {
         "id": row[0],
