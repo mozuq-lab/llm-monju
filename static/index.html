@@ -33,6 +33,7 @@
         header {
             text-align: center;
             margin-bottom: 2rem;
+            position: relative;
         }
 
         header h1 {
@@ -50,6 +51,99 @@
         header p {
             color: var(--color-muted);
             margin-top: 0.3rem;
+        }
+
+        .history-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0;
+            background: none;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 0.4rem 0.8rem;
+            color: var(--color-muted);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.15s;
+        }
+
+        .history-btn:hover {
+            border-color: var(--color-facilitator);
+            color: var(--color-facilitator);
+        }
+
+        .history-panel {
+            display: none;
+            background: var(--color-card);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+            margin-bottom: 2rem;
+        }
+
+        .history-panel.open { display: block; }
+
+        .history-panel h3 {
+            font-size: 1rem;
+            margin-bottom: 0.8rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .history-panel h3 button {
+            background: none;
+            border: none;
+            color: var(--color-muted);
+            cursor: pointer;
+            font-size: 1.2rem;
+        }
+
+        .history-list {
+            max-height: 300px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .history-empty {
+            color: var(--color-muted);
+            font-size: 0.9rem;
+            text-align: center;
+            padding: 1rem;
+        }
+
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.6rem 0.8rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            gap: 0.8rem;
+        }
+
+        .history-item:hover {
+            border-color: var(--color-facilitator);
+            background: #faf5ff;
+        }
+
+        .history-item-topic {
+            font-size: 0.9rem;
+            font-weight: 500;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .history-item-meta {
+            font-size: 0.75rem;
+            color: var(--color-muted);
+            white-space: nowrap;
         }
 
         .settings {
@@ -252,11 +346,6 @@
             color: white;
         }
 
-        .model-id-tag {
-            font-size: 0.75rem;
-            color: var(--color-muted);
-        }
-
         .message-content {
             font-size: 0.95rem;
             line-height: 1.8;
@@ -288,6 +377,55 @@
             font-weight: 800;
             color: var(--color-facilitator);
             margin-bottom: 0.8rem;
+        }
+
+        .post-debate-actions {
+            display: flex;
+            gap: 0.8rem;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 0.5rem;
+            padding: 1rem;
+            background: var(--color-card);
+            border-radius: var(--radius);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+
+        .share-url-group {
+            display: flex;
+            flex: 1;
+            min-width: 200px;
+            gap: 0.4rem;
+        }
+
+        .share-url-group input {
+            flex: 1;
+            font-size: 0.8rem;
+            color: var(--color-muted);
+            padding: 0.4rem 0.6rem;
+        }
+
+        .share-url-group button, .export-btn {
+            padding: 0.4rem 0.8rem;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            transition: all 0.15s;
+            color: var(--color-text);
+            text-decoration: none;
+        }
+
+        .share-url-group button:hover, .export-btn:hover {
+            border-color: var(--color-facilitator);
+            color: var(--color-facilitator);
+        }
+
+        .copy-ok {
+            color: #10a37f !important;
+            border-color: #10a37f !important;
         }
 
         .loading-indicator {
@@ -336,6 +474,7 @@
             .model-row { grid-template-columns: auto 1fr auto; }
             .model-row .model-id { grid-column: 1 / -1; }
             .facilitator-row { grid-template-columns: 1fr; }
+            .post-debate-actions { flex-direction: column; }
         }
     </style>
 </head>
@@ -344,7 +483,18 @@
         <header>
             <h1>文殊 <span>Monju</span></h1>
             <p>三人寄れば文殊の知恵 &mdash; Multi-AI Debate System</p>
+            <button class="history-btn" onclick="toggleHistory()">履歴</button>
         </header>
+
+        <div class="history-panel" id="history-panel">
+            <h3>
+                過去の議論
+                <button onclick="toggleHistory()">&times;</button>
+            </h3>
+            <div class="history-list" id="history-list">
+                <div class="history-empty">読み込み中...</div>
+            </div>
+        </div>
 
         <div class="settings" id="settings">
             <div class="form-group">
@@ -392,6 +542,12 @@
 
         const speakerColors = {};
         let colorIndex = 0;
+        let currentDebateId = null;
+
+        function resetColors() {
+            Object.keys(speakerColors).forEach(k => delete speakerColors[k]);
+            colorIndex = 0;
+        }
 
         function getSpeakerColor(speaker) {
             if (speaker === 'facilitator' || speaker === 'Facilitator') return FACILITATOR_COLOR;
@@ -434,21 +590,77 @@
             return debaters;
         }
 
-        // --- Init ---
+        // --- History ---
 
-        async function init() {
+        async function toggleHistory() {
+            const panel = document.getElementById('history-panel');
+            const isOpen = panel.classList.toggle('open');
+            if (isOpen) await loadHistory();
+        }
+
+        async function loadHistory() {
+            const list = document.getElementById('history-list');
             try {
-                const res = await fetch('/api/defaults');
+                const res = await fetch('/api/debates');
                 const data = await res.json();
-                data.models.forEach(m => addModelRow(m.name, m.model, true));
-                // Set first model as default facilitator
-                if (data.models.length > 0) {
-                    document.getElementById('facilitator-model').value = data.models[0].model;
+                if (data.debates.length === 0) {
+                    list.innerHTML = '<div class="history-empty">まだ議論がありません</div>';
+                    return;
                 }
+                list.innerHTML = data.debates.map(d => {
+                    const date = new Date(d.created_at + 'Z').toLocaleString('ja-JP');
+                    const names = d.debater_models.map(m => m.name).join(', ');
+                    return `
+                        <div class="history-item" onclick="loadDebate('${d.id}')">
+                            <div class="history-item-topic">${esc(d.topic)}</div>
+                            <div class="history-item-meta">${names} / ${date}</div>
+                        </div>
+                    `;
+                }).join('');
             } catch (e) {
-                addModelRow('Claude', 'anthropic/claude-sonnet-4-6', true);
-                addModelRow('ChatGPT', 'openai/gpt-4o', true);
-                document.getElementById('facilitator-model').value = 'anthropic/claude-sonnet-4-6';
+                list.innerHTML = '<div class="history-empty">履歴の読み込みに失敗しました</div>';
+            }
+        }
+
+        async function loadDebate(debateId) {
+            try {
+                const res = await fetch(`/api/debates/${debateId}`);
+                if (!res.ok) { showError('議論が見つかりません'); return; }
+                const data = await res.json();
+                renderSavedDebate(data);
+                // Update URL without reload
+                history.pushState(null, '', `/?id=${debateId}`);
+            } catch (e) {
+                showError(`読み込みエラー: ${e.message}`);
+            }
+        }
+
+        function renderSavedDebate(data) {
+            resetColors();
+            currentDebateId = data.id;
+            document.getElementById('debate-area').innerHTML = '';
+            document.getElementById('history-panel').classList.remove('open');
+
+            for (const event of data.events) {
+                handleEvent(event);
+            }
+            addPostDebateActions(data.id);
+            window.scrollTo({ top: 0 });
+        }
+
+        // --- Shared event rendering ---
+
+        function handleEvent(data) {
+            switch (data.type) {
+                case 'round_start':
+                    addRoundDivider(data.round);
+                    break;
+                case 'message':
+                    addMessage(data);
+                    break;
+                case 'conclusion':
+                    addConclusion(data);
+                    break;
             }
         }
 
@@ -493,7 +705,7 @@
                 <div class="message-header">
                     <span class="speaker-badge" style="background:${color}">${data.display_name}</span>
                 </div>
-                <div class="message-content">${marked.parse(data.content)}</div>
+                <div class="message-content">${marked.parse(data.content || '')}</div>
             `;
             area.appendChild(div);
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
@@ -511,10 +723,39 @@
             div.className = 'conclusion-card';
             div.innerHTML = `
                 <div class="conclusion-title">結論</div>
-                <div class="message-content">${marked.parse(data.content)}</div>
+                <div class="message-content">${marked.parse(data.content || '')}</div>
             `;
             area.appendChild(div);
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+
+        function addPostDebateActions(debateId) {
+            const area = document.getElementById('debate-area');
+            const shareUrl = `${window.location.origin}/?id=${debateId}`;
+            const div = document.createElement('div');
+            div.className = 'post-debate-actions';
+            div.innerHTML = `
+                <div class="share-url-group">
+                    <input type="text" readonly value="${shareUrl}" id="share-url">
+                    <button onclick="copyShareUrl()">コピー</button>
+                </div>
+                <a href="/api/debates/${debateId}/export" class="export-btn">Markdown エクスポート</a>
+            `;
+            area.appendChild(div);
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+
+        function copyShareUrl() {
+            const input = document.getElementById('share-url');
+            navigator.clipboard.writeText(input.value).then(() => {
+                const btn = input.nextElementSibling;
+                btn.textContent = 'コピー済み';
+                btn.classList.add('copy-ok');
+                setTimeout(() => {
+                    btn.textContent = 'コピー';
+                    btn.classList.remove('copy-ok');
+                }, 2000);
+            });
         }
 
         function showError(msg) {
@@ -523,6 +764,29 @@
             div.className = 'error-msg';
             div.textContent = msg;
             area.appendChild(div);
+        }
+
+        // --- Init ---
+
+        async function init() {
+            try {
+                const res = await fetch('/api/defaults');
+                const data = await res.json();
+                data.models.forEach(m => addModelRow(m.name, m.model, true));
+                if (data.models.length > 0) {
+                    document.getElementById('facilitator-model').value = data.models[0].model;
+                }
+            } catch (e) {
+                addModelRow('Claude', 'anthropic/claude-sonnet-4-6', true);
+                addModelRow('ChatGPT', 'openai/gpt-4o', true);
+                document.getElementById('facilitator-model').value = 'anthropic/claude-sonnet-4-6';
+            }
+
+            // Check for shared debate URL
+            const debateId = new URLSearchParams(window.location.search).get('id');
+            if (debateId) {
+                await loadDebate(debateId);
+            }
         }
 
         // --- Start debate ---
@@ -540,9 +804,8 @@
 
             const numRounds = parseInt(document.getElementById('rounds').value);
 
-            // Reset state
-            Object.keys(speakerColors).forEach(k => delete speakerColors[k]);
-            colorIndex = 0;
+            resetColors();
+            currentDebateId = null;
 
             const btn = document.getElementById('start-btn');
             btn.disabled = true;
@@ -597,6 +860,11 @@
                                     addConclusion(data);
                                     break;
                                 case 'done':
+                                    if (data.debate_id) {
+                                        currentDebateId = data.debate_id;
+                                        addPostDebateActions(data.debate_id);
+                                        history.replaceState(null, '', `/?id=${data.debate_id}`);
+                                    }
                                     break;
                             }
                         }

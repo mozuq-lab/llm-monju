@@ -22,8 +22,8 @@ python app.py
 ```
 
 ```bash
-# Run tests (no API key required — uses mock clients)
-pytest test_debate.py -v
+# Run tests (no API key required — uses mock clients and in-memory SQLite)
+pytest test_debate.py test_db.py -v
 ```
 
 ## Architecture
@@ -39,6 +39,8 @@ The app is a FastAPI server with a vanilla HTML/JS frontend, connected via Serve
 - Each debater receives the **full conversation history** as a formatted string in its user prompt (not as multi-turn chat). This keeps the interface uniform across models.
 - The facilitator uses the same `LLMClient` class as debaters but with different system/user prompts.
 - A single shared `AsyncOpenAI` instance (created at startup in `app.state.openrouter`) is reused across all `LLMClient` instances.
+
+**Persistence:** Completed debates are saved to SQLite (`monju.db`, auto-created) via `db.py`. Saving happens after the SSE stream completes, so it never delays delivery. The `done` SSE event includes `debate_id` so the frontend can immediately construct share URLs. Past debates are viewable via `/?id={debate_id}` and exportable as Markdown via `GET /api/debates/{id}/export`.
 
 ## Conventions
 
