@@ -467,6 +467,82 @@
             font-size: 0.9rem;
         }
 
+        .message-card.human {
+            border-left-color: #10a37f;
+            background: #f0fdf4;
+        }
+
+        .intervention-panel {
+            background: var(--color-card);
+            border-radius: var(--radius);
+            padding: 1.2rem 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            border: 2px dashed #d1d5db;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .intervention-panel .section-label {
+            margin-bottom: 0.6rem;
+        }
+
+        .intervention-panel textarea {
+            min-height: 60px;
+            margin-bottom: 0.8rem;
+        }
+
+        .intervention-btn-group {
+            display: flex;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+
+        .intervention-btn-group button {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn-primary {
+            background: var(--color-facilitator);
+            color: white;
+            border: 1px solid var(--color-facilitator);
+        }
+
+        .btn-primary:hover { opacity: 0.9; }
+
+        .btn-secondary {
+            background: white;
+            color: var(--color-text);
+            border: 1px solid #d1d5db;
+        }
+
+        .btn-secondary:hover { border-color: var(--color-facilitator); color: var(--color-facilitator); }
+
+        .btn-conclude {
+            background: white;
+            color: #d97706;
+            border: 1px solid #d97706;
+        }
+
+        .btn-conclude:hover { background: #fffbeb; }
+
+        .intervention-check {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .intervention-check input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
         @media (max-width: 600px) {
             .container { padding: 1rem; }
             header h1 { font-size: 1.6rem; }
@@ -481,7 +557,7 @@
 <body>
     <div class="container">
         <header>
-            <h1>文殊 <span>Monju</span></h1>
+            <h1><a href="/" style="text-decoration:none;color:inherit">文殊 <span>Monju</span></a></h1>
             <p>三人寄れば文殊の知恵 &mdash; Multi-AI Debate System</p>
             <button class="history-btn" onclick="toggleHistory()">履歴</button>
         </header>
@@ -527,6 +603,11 @@
                 </div>
             </div>
 
+            <label class="intervention-check">
+                <input type="checkbox" id="intervention-mode">
+                介入モード（ラウンド間でフィードバック可能）
+            </label>
+
             <button id="start-btn" onclick="startDebate()">議論を開始</button>
         </div>
 
@@ -551,6 +632,7 @@
 
         function getSpeakerColor(speaker) {
             if (speaker === 'facilitator' || speaker === 'Facilitator') return FACILITATOR_COLOR;
+            if (speaker === 'human' || speaker === 'Human') return '#10a37f';
             if (!speakerColors[speaker]) {
                 speakerColors[speaker] = PALETTE[colorIndex % PALETTE.length];
                 colorIndex++;
@@ -697,8 +779,9 @@
             const isFacilitator = data.speaker === 'facilitator';
 
             const div = document.createElement('div');
-            div.className = `message-card${isFacilitator ? ' facilitator' : ''}`;
-            if (!isFacilitator) {
+            const isHuman = data.speaker === 'human';
+            div.className = `message-card${isFacilitator ? ' facilitator' : ''}${isHuman ? ' human' : ''}`;
+            if (!isFacilitator && !isHuman) {
                 div.style.borderLeftColor = color;
             }
             div.innerHTML = `
@@ -789,6 +872,234 @@
             }
         }
 
+        // --- SSE stream reader ---
+
+        let activeDebateId = null;
+        let debateInProgress = false;
+
+        async function readSSEStream(response, onEvent) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop();
+                for (const part of parts) {
+                    for (const line of part.split('\n')) {
+                        if (!line.startsWith('data: ')) continue;
+                        onEvent(JSON.parse(line.slice(6)));
+                    }
+                }
+            }
+            if (buffer.trim()) {
+                for (const line of buffer.split('\n')) {
+                    if (!line.startsWith('data: ')) continue;
+                    onEvent(JSON.parse(line.slice(6)));
+                }
+            }
+        }
+
+        function handleSSEEvent(data) {
+            removeLoading();
+            switch (data.type) {
+                case 'debate_started':
+                    activeDebateId = data.debate_id;
+                    break;
+                case 'round_start':
+                    addRoundDivider(data.round);
+                    addLoading(`Round ${data.round} — 各モデルが回答中...`);
+                    break;
+                case 'message':
+                    removeLoading();
+                    addMessage(data);
+                    break;
+                case 'generating_conclusion':
+                    addLoading('ファシリテーターが結論を生成中...');
+                    break;
+                case 'conclusion':
+                    removeLoading();
+                    addConclusion(data);
+                    break;
+                case 'awaiting_input':
+                    showInterventionPanel(data.round_completed, data.rounds_remaining);
+                    break;
+                case 'awaiting_continuation':
+                    showContinuationPanel();
+                    break;
+                case 'done':
+                    debateInProgress = false;
+                    document.getElementById('start-btn').disabled = false;
+                    document.getElementById('start-btn').textContent = '議論を開始';
+                    if (data.debate_id) {
+                        currentDebateId = data.debate_id;
+                        addPostDebateActions(data.debate_id);
+                        history.replaceState(null, '', `/?id=${data.debate_id}`);
+                    }
+                    break;
+            }
+        }
+
+        // --- Intervention panel ---
+
+        function showInterventionPanel(roundCompleted, roundsRemaining) {
+            removeLoading();
+            const area = document.getElementById('debate-area');
+            const div = document.createElement('div');
+            div.className = 'intervention-panel';
+            div.id = 'intervention-panel';
+            div.innerHTML = `
+                <div class="section-label">ラウンド ${roundCompleted} 完了 ― あと ${roundsRemaining} ラウンド</div>
+                <textarea id="intervention-input" placeholder="議論へのフィードバックを入力（任意）..."></textarea>
+                <div class="intervention-btn-group">
+                    <button class="btn-primary" onclick="submitIntervention()">送信して続行</button>
+                    <button class="btn-secondary" onclick="skipIntervention()">スキップして続行</button>
+                    <button class="btn-conclude" onclick="concludeEarly()">結論へ進む</button>
+                </div>
+            `;
+            area.appendChild(div);
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+
+        function removeInterventionPanel() {
+            const el = document.getElementById('intervention-panel');
+            if (el) el.remove();
+        }
+
+        function submitIntervention() {
+            const input = document.getElementById('intervention-input').value.trim();
+            removeInterventionPanel();
+            continueDebate(input || null);
+        }
+
+        function skipIntervention() {
+            removeInterventionPanel();
+            continueDebate(null);
+        }
+
+        function concludeEarly() {
+            const input = document.getElementById('intervention-input').value.trim();
+            removeInterventionPanel();
+            concludeDebateNow(input || null);
+        }
+
+        // --- Continuation panel (after conclusion) ---
+
+        function showContinuationPanel() {
+            removeLoading();
+            const area = document.getElementById('debate-area');
+            const div = document.createElement('div');
+            div.className = 'intervention-panel';
+            div.id = 'continuation-panel';
+            div.innerHTML = `
+                <div class="section-label">議論を続けますか？</div>
+                <textarea id="continuation-input" placeholder="追加の論点やフィードバックを入力（任意）..."></textarea>
+                <div class="intervention-btn-group">
+                    <button class="btn-primary" onclick="extendDebate()">議論を続ける</button>
+                    <button class="btn-secondary" onclick="finishDebate()">終了して保存</button>
+                </div>
+            `;
+            area.appendChild(div);
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+
+        async function extendDebate() {
+            const input = document.getElementById('continuation-input').value.trim();
+            const panel = document.getElementById('continuation-panel');
+            if (panel) panel.remove();
+
+            addLoading('追加ラウンドを実行中...');
+            try {
+                const res = await fetch(`/api/debate/${activeDebateId}/extend`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ input: input || null }),
+                });
+                if (!res.ok) {
+                    removeLoading();
+                    const err = await res.json();
+                    const msg = err.error
+                        || (Array.isArray(err.detail) ? err.detail.map(d => d.msg || JSON.stringify(d)).join(', ') : err.detail)
+                        || 'エラーが発生しました';
+                    showError(msg);
+                    return;
+                }
+                await readSSEStream(res, handleSSEEvent);
+            } catch (e) {
+                removeLoading();
+                showError(`通信エラー: ${e.message}`);
+            }
+        }
+
+        async function finishDebate() {
+            const panel = document.getElementById('continuation-panel');
+            if (panel) panel.remove();
+
+            try {
+                const res = await fetch(`/api/debate/${activeDebateId}/finish`, {
+                    method: 'POST',
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    showError(err.error || 'エラーが発生しました');
+                    return;
+                }
+                await readSSEStream(res, handleSSEEvent);
+            } catch (e) {
+                showError(`通信エラー: ${e.message}`);
+            }
+        }
+
+        async function continueDebate(inputText) {
+            addLoading('次のラウンドを準備中...');
+            try {
+                const res = await fetch(`/api/debate/${activeDebateId}/next`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ input: inputText }),
+                });
+                if (!res.ok) {
+                    removeLoading();
+                    const err = await res.json();
+                    const msg = err.error
+                        || (Array.isArray(err.detail) ? err.detail.map(d => d.msg || JSON.stringify(d)).join(', ') : err.detail)
+                        || 'エラーが発生しました';
+                    showError(msg);
+                    return;
+                }
+                await readSSEStream(res, handleSSEEvent);
+            } catch (e) {
+                removeLoading();
+                showError(`通信エラー: ${e.message}`);
+            }
+        }
+
+        async function concludeDebateNow(inputText) {
+            addLoading('ファシリテーターが結論を生成中...');
+            try {
+                const res = await fetch(`/api/debate/${activeDebateId}/conclude`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ input: inputText }),
+                });
+                if (!res.ok) {
+                    removeLoading();
+                    const err = await res.json();
+                    const msg = err.error
+                        || (Array.isArray(err.detail) ? err.detail.map(d => d.msg || JSON.stringify(d)).join(', ') : err.detail)
+                        || 'エラーが発生しました';
+                    showError(msg);
+                    return;
+                }
+                await readSSEStream(res, handleSSEEvent);
+            } catch (e) {
+                removeLoading();
+                showError(`通信エラー: ${e.message}`);
+            }
+        }
+
         // --- Start debate ---
 
         async function startDebate() {
@@ -803,9 +1114,12 @@
             if (!facilitatorModel) { alert('ファシリテーターのモデルIDを入力してください'); return; }
 
             const numRounds = parseInt(document.getElementById('rounds').value);
+            const intervention = document.getElementById('intervention-mode').checked;
 
             resetColors();
             currentDebateId = null;
+            activeDebateId = null;
+            debateInProgress = true;
 
             const btn = document.getElementById('start-btn');
             btn.disabled = true;
@@ -822,75 +1136,29 @@
                         num_rounds: numRounds,
                         debaters,
                         facilitator: { model: facilitatorModel, name: facilitatorName },
+                        intervention,
                     }),
                 });
 
                 if (!res.ok) {
                     const err = await res.json();
                     removeLoading();
-                    showError(err.error || err.detail || 'エラーが発生しました');
+                    const msg = err.error
+                        || (Array.isArray(err.detail) ? err.detail.map(d => d.msg || JSON.stringify(d)).join(', ') : err.detail)
+                        || 'エラーが発生しました';
+                    showError(msg);
                     return;
                 }
 
-                const reader = res.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                function processSSEBuffer(text) {
-                    for (const part of text.split('\n\n')) {
-                        for (const line of part.split('\n')) {
-                            if (!line.startsWith('data: ')) continue;
-                            const data = JSON.parse(line.slice(6));
-                            removeLoading();
-
-                            switch (data.type) {
-                                case 'round_start':
-                                    addRoundDivider(data.round);
-                                    addLoading(`Round ${data.round} — 各モデルが回答中...`);
-                                    break;
-                                case 'message':
-                                    removeLoading();
-                                    addMessage(data);
-                                    break;
-                                case 'generating_conclusion':
-                                    addLoading('ファシリテーターが結論を生成中...');
-                                    break;
-                                case 'conclusion':
-                                    removeLoading();
-                                    addConclusion(data);
-                                    break;
-                                case 'done':
-                                    if (data.debate_id) {
-                                        currentDebateId = data.debate_id;
-                                        addPostDebateActions(data.debate_id);
-                                        history.replaceState(null, '', `/?id=${data.debate_id}`);
-                                    }
-                                    break;
-                            }
-                        }
-                    }
-                }
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    buffer += decoder.decode(value, { stream: true });
-                    const parts = buffer.split('\n\n');
-                    buffer = parts.pop();
-                    processSSEBuffer(parts.join('\n\n'));
-                }
-
-                // Process any remaining data in the buffer
-                if (buffer.trim()) {
-                    processSSEBuffer(buffer);
-                }
+                await readSSEStream(res, handleSSEEvent);
             } catch (e) {
                 removeLoading();
                 showError(`通信エラー: ${e.message}`);
             } finally {
-                btn.disabled = false;
-                btn.textContent = '議論を開始';
+                if (!debateInProgress) {
+                    btn.disabled = false;
+                    btn.textContent = '議論を開始';
+                }
             }
         }
 

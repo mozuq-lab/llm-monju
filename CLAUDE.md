@@ -42,6 +42,8 @@ The app is a FastAPI server with a vanilla HTML/JS frontend, connected via Serve
 
 **Persistence:** Completed debates are saved to SQLite (`monju.db`, auto-created) via `db.py`. Saving happens after the SSE stream completes, so it never delays delivery. The `done` SSE event includes `debate_id` so the frontend can immediately construct share URLs. Past debates are viewable via `/?id={debate_id}` and exportable as Markdown via `GET /api/debates/{id}/export`.
 
+**Intervention mode:** When `intervention: true` is sent in the debate request, the debate runs round-by-round instead of as a single stream. `POST /api/debate` runs the opening + Round 1, then pauses with an `awaiting_input` event. `POST /api/debate/{id}/next` advances one round, optionally accepting user feedback via `inject_human_message()` that becomes part of the conversation context. `POST /api/debate/{id}/conclude` skips remaining rounds and generates the conclusion. Active debate state is held in memory (`app.state.active_debates`) with a 1-hour TTL. When `intervention: false` (default), the existing single-stream `run()` is used.
+
 ## Conventions
 
 - Python 3.9 compatibility is required. Use `from __future__ import annotations` for modern type hint syntax. Use `typing.Optional`/`typing.List` in Pydantic models (Pydantic evaluates annotations at runtime, bypassing `__future__`).

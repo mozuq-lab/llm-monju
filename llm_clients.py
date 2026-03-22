@@ -5,8 +5,13 @@ import os
 
 from openai import AsyncOpenAI
 
-DEFAULT_MAX_TOKENS = int(os.environ.get("MONJU_MAX_TOKENS", "4096"))
-DEFAULT_TIMEOUT = int(os.environ.get("MONJU_TIMEOUT", "120"))
+
+def _get_max_tokens() -> int:
+    return int(os.environ.get("MONJU_MAX_TOKENS", "4096"))
+
+
+def _get_timeout() -> int:
+    return int(os.environ.get("MONJU_TIMEOUT", "120"))
 
 
 class LLMClient:
@@ -24,12 +29,12 @@ class LLMClient:
         response = await asyncio.wait_for(
             self.client.chat.completions.create(
                 model=self.model,
-                max_tokens=max_tokens or DEFAULT_MAX_TOKENS,
+                max_tokens=max_tokens or _get_max_tokens(),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
             ),
-            timeout=DEFAULT_TIMEOUT,
+            timeout=_get_timeout(),
         )
         return response.choices[0].message.content or ""

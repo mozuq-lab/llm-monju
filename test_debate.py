@@ -256,8 +256,8 @@ async def test_messages_stored_in_manager():
     manager = make_manager(num_debaters=2, num_rounds=1)
     await collect_events(manager)
 
-    # opening(1) + debater×2 = 3 (round_start, conclusion, done は含まない)
-    assert len(manager.messages) == 3
+    # opening(1) + debater×2 + conclusion(1) = 4
+    assert len(manager.messages) == 4
 
 
 @pytest.mark.asyncio
@@ -323,3 +323,107 @@ async def test_opening_prompt_lists_all_debaters():
     prompt = manager._facilitator_opening_prompt()
     assert "Alice" in prompt
     assert "Bob" in prompt
+
+
+# --- Round-by-round API tests ---
+
+
+async def collect_gen(gen):
+    events = []
+    async for event in gen:
+        events.append(event)
+    return events
+
+
+@pytest.mark.asyncio
+async def test_run_opening():
+    """run_opening() がファシリテーター開会メッセージを生成する。"""
+    manager = make_manager(num_debaters=2, num_rounds=2)
+    events = await collect_gen(manager.run_opening())
+    assert len(events) == 1
+    assert events[0]["type"] == "message"
+    assert events[0]["speaker"] == "facilitator"
+
+
+@pytest.mark.asyncio
+async def test_run_round_single():
+    """run_round() が1ラウンド分のイベントを正しく生成する。"""
+    manager = make_manager(num_debaters=2, num_rounds=3)
+    await collect_gen(manager.run_opening())
+    events = await collect_gen(manager.run_round(1))
+    types = [e["type"] for e in events]
+    # round_start + debater×2 + facilitator summary
+    assert types == ["round_start", "message", "message", "message"]
+
+
+@pytest.mark.asyncio
+async def test_run_round_last_has_no_summary():
+    """最終ラウンドではファシリテーター要約が生成されない。"""
+    manager = make_manager(num_debaters=2, num_rounds=2)
+    await collect_gen(manager.run_opening())
+    await collect_gen(manager.run_round(1))
+    events = await collect_gen(manager.run_round(2))
+    types = [e["type"] for e in events]
+    assert types == ["round_start", "message", "message"]
+
+
+@pytest.mark.asyncio
+async def test_run_conclude():
+    """run_conclude() が結論イベントを生成する。"""
+    manager = make_manager(num_debaters=2, num_rounds=1)
+    await collect_gen(manager.run_opening())
+    await collect_gen(manager.run_round(1))
+    events = await collect_gen(manager.run_conclude())
+    types = [e["type"] for e in events]
+    assert types == ["generating_conclusion", "conclusion"]
+
+
+@pytest.mark.asyncio
+async def test_inject_human_message():
+    """inject_human_message() がメッセージ履歴に追加される。"""
+    manager = make_manager(num_debaters=2, num_rounds=2)
+    await collect_gen(manager.run_opening())
+    await collect_gen(manager.run_round(1))
+
+    msg = manager.inject_human_message("ユーザーのフィードバック", after_round=1)
+    assert msg["speaker"] == "human"
+    assert msg["display_name"] == "Human"
+
+    history = manager._format_history()
+    assert "ユーザーのフィードバック" in history
+    assert "【Human】" in history
+
+
+@pytest.mark.asyncio
+async def test_human_message_in_subsequent_prompts():
+    """介入メッセージが後続ラウンドの討論者プロンプトに含まれる。"""
+    alice = MockLLMClient("Alice")
+    bob = MockLLMClient("Bob")
+    manager = make_manager(debaters={"a": alice, "b": bob}, num_rounds=2)
+    await collect_gen(manager.run_opening())
+    await collect_gen(manager.run_round(1))
+
+    manager.inject_human_message("もっと具体例を出してください", after_round=1)
+    await collect_gen(manager.run_round(2))
+
+    round2_prompt = alice.calls[1][1]
+    assert "もっと具体例を出してください" in round2_prompt
+
+
+@pytest.mark.asyncio
+async def test_roundbyround_matches_run():
+    """run_opening + run_round + run_conclude が run() と同一イベント型列を生成する。"""
+    m1 = make_manager(num_debaters=2, num_rounds=2)
+    events_run = await collect_events(m1)
+
+    m2 = make_manager(num_debaters=2, num_rounds=2)
+    events_rr = []
+    events_rr.extend(await collect_gen(m2.run_opening()))
+    events_rr.extend(await collect_gen(m2.run_round(1)))
+    events_rr.extend(await collect_gen(m2.run_round(2)))
+    events_rr.extend(await collect_gen(m2.run_conclude()))
+
+    # run() includes 'done' at the end; run_conclude() does not
+    run_types = [e["type"] for e in events_run]
+    rr_types = [e["type"] for e in events_rr]
+    assert run_types == rr_types + ["done"]

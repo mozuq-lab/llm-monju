@@ -163,7 +163,10 @@ async def export_debate_markdown(db: aiosqlite.Connection, debate_id: str) -> st
             if event.get("round", 0) == 0:
                 lines.append("## 開会")
                 lines.append("")
-            lines.append(f"### {event['display_name']}")
+            name = event['display_name']
+            if event.get("speaker") == "human":
+                name += " (ユーザー介入)"
+            lines.append(f"### {name}")
             lines.append("")
             lines.append(event.get("content") or "")
             lines.append("")

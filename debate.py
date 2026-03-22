@@ -102,10 +102,9 @@ class DebateManager:
         except Exception as e:
             return client, f"[応答エラー: {type(e).__name__}: {e}]"
 
-    async def run(self) -> AsyncGenerator[dict, None]:
-        """Run the debate, yielding messages as they're generated."""
+    # --- Private building blocks ---
 
-        # Facilitator opening
+    async def _run_opening(self) -> AsyncGenerator[dict, None]:
         try:
             opening = await self.facilitator.generate(
                 self._facilitator_system_prompt(),
@@ -123,50 +122,49 @@ class DebateManager:
         self.messages.append(msg)
         yield msg
 
-        # Debate rounds
-        for round_num in range(1, self.num_rounds + 1):
-            yield {"type": "round_start", "round": round_num}
+    async def _run_single_round(
+        self, round_num: int, is_last: bool
+    ) -> AsyncGenerator[dict, None]:
+        yield {"type": "round_start", "round": round_num}
 
-            # All debaters respond in parallel
-            user_prompt = self._debater_user_prompt(round_num)
-            tasks = [
-                self._get_response(client, user_prompt)
-                for client in self.debaters.values()
-            ]
-            results = await asyncio.gather(*tasks)
+        user_prompt = self._debater_user_prompt(round_num)
+        tasks = [
+            self._get_response(client, user_prompt)
+            for client in self.debaters.values()
+        ]
+        results = await asyncio.gather(*tasks)
 
-            for client, content in results:
-                msg = {
-                    "type": "message",
-                    "speaker": client.name,
-                    "display_name": client.display_name,
-                    "content": content,
-                    "round": round_num,
-                }
-                self.messages.append(msg)
-                yield msg
+        for client, content in results:
+            msg = {
+                "type": "message",
+                "speaker": client.name,
+                "display_name": client.display_name,
+                "content": content,
+                "round": round_num,
+            }
+            self.messages.append(msg)
+            yield msg
 
-            # Facilitator summary between rounds
-            if round_num < self.num_rounds:
-                try:
-                    summary = await self.facilitator.generate(
-                        self._facilitator_system_prompt(),
-                        self._facilitator_summary_prompt(round_num),
-                    )
-                except Exception as e:
-                    summary = f"[ファシリテーター応答エラー: {e}]"
+        if not is_last:
+            try:
+                summary = await self.facilitator.generate(
+                    self._facilitator_system_prompt(),
+                    self._facilitator_summary_prompt(round_num),
+                )
+            except Exception as e:
+                summary = f"[ファシリテーター応答エラー: {e}]"
 
-                msg = {
-                    "type": "message",
-                    "speaker": "facilitator",
-                    "display_name": "Facilitator",
-                    "content": summary,
-                    "round": round_num,
-                }
-                self.messages.append(msg)
-                yield msg
+            msg = {
+                "type": "message",
+                "speaker": "facilitator",
+                "display_name": "Facilitator",
+                "content": summary,
+                "round": round_num,
+            }
+            self.messages.append(msg)
+            yield msg
 
-        # Final conclusion
+    async def _run_conclusion(self) -> AsyncGenerator[dict, None]:
         yield {"type": "generating_conclusion"}
         try:
             conclusion = await self.facilitator.generate(
@@ -176,11 +174,57 @@ class DebateManager:
         except Exception as e:
             conclusion = f"[結論生成エラー: {e}]"
 
-        yield {
+        msg = {
             "type": "conclusion",
             "speaker": "facilitator",
             "display_name": "Facilitator",
             "content": conclusion,
         }
+        self.messages.append(msg)
+        yield msg
 
+    # --- Public API: full auto ---
+
+    async def run(self) -> AsyncGenerator[dict, None]:
+        """Run the full debate automatically (existing behavior)."""
+        async for event in self._run_opening():
+            yield event
+
+        for round_num in range(1, self.num_rounds + 1):
+            is_last = round_num == self.num_rounds
+            async for event in self._run_single_round(round_num, is_last):
+                yield event
+
+        async for event in self._run_conclusion():
+            yield event
         yield {"type": "done"}
+
+    # --- Public API: round-by-round (for intervention mode) ---
+
+    async def run_opening(self) -> AsyncGenerator[dict, None]:
+        """Run the facilitator opening."""
+        async for event in self._run_opening():
+            yield event
+
+    async def run_round(self, round_num: int) -> AsyncGenerator[dict, None]:
+        """Run a single round. Caller manages round progression."""
+        is_last = round_num >= self.num_rounds
+        async for event in self._run_single_round(round_num, is_last):
+            yield event
+
+    async def run_conclude(self) -> AsyncGenerator[dict, None]:
+        """Generate the final conclusion."""
+        async for event in self._run_conclusion():
+            yield event
+
+    def inject_human_message(self, content: str, after_round: int) -> dict:
+        """Add a human intervention message to the conversation history."""
+        msg = {
+            "type": "message",
+            "speaker": "human",
+            "display_name": "Human",
+            "content": content,
+            "round": after_round,
+        }
+        self.messages.append(msg)
+        return msg

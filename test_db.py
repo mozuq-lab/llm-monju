@@ -121,3 +121,42 @@ async def test_export_debate_markdown(db):
 async def test_export_not_found(db):
     result = await export_debate_markdown(db, "nonexistent")
     assert result is None
+
+
+SAMPLE_EVENTS_WITH_HUMAN = [
+    {"type": "message", "speaker": "facilitator", "display_name": "Facilitator", "content": "議論を始めます。", "round": 0},
+    {"type": "round_start", "round": 1},
+    {"type": "message", "speaker": "Alice", "display_name": "Alice", "content": "Aliceの意見です。", "round": 1},
+    {"type": "message", "speaker": "facilitator", "display_name": "Facilitator", "content": "要約です。", "round": 1},
+    {"type": "message", "speaker": "human", "display_name": "Human", "content": "もっと具体例を。", "round": 1},
+    {"type": "round_start", "round": 2},
+    {"type": "message", "speaker": "Alice", "display_name": "Alice", "content": "Aliceの追加意見。", "round": 2},
+    {"type": "generating_conclusion"},
+    {"type": "conclusion", "speaker": "facilitator", "display_name": "Facilitator", "content": "結論です。"},
+    {"type": "done"},
+]
+
+
+@pytest.mark.asyncio
+async def test_save_and_get_debate_with_human_messages(db):
+    await save_debate(
+        db=db, debate_id="human_test", topic="介入テスト",
+        num_rounds=2, debater_models=DEBATER_MODELS,
+        facilitator_model=FACILITATOR_MODEL, events=SAMPLE_EVENTS_WITH_HUMAN,
+    )
+    debate = await get_debate(db, "human_test")
+    human_msgs = [e for e in debate["events"] if e.get("speaker") == "human"]
+    assert len(human_msgs) == 1
+    assert human_msgs[0]["content"] == "もっと具体例を。"
+
+
+@pytest.mark.asyncio
+async def test_export_with_human_messages(db):
+    await save_debate(
+        db=db, debate_id="human_export", topic="介入テスト",
+        num_rounds=2, debater_models=DEBATER_MODELS,
+        facilitator_model=FACILITATOR_MODEL, events=SAMPLE_EVENTS_WITH_HUMAN,
+    )
+    md = await export_debate_markdown(db, "human_export")
+    assert "ユーザー介入" in md
+    assert "もっと具体例を。" in md
